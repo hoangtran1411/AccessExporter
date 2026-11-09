@@ -3,8 +3,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Access Exporter"
-                Height="650"
-                Width="1100"
+        Height="650"
+        Width="1100"
         Icon="/Assets/grow-plant.ico">
         
 
