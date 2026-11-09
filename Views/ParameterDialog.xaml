@@ -1,0 +1,43 @@
+<!-- AccessExporter/Views/ParameterDialog.xaml -->
+<Window x:Class="AccessExporter.Views.ParameterDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Query parameters"
+        Width="420"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="12">
+
+        <ItemsControl x:Name="ParameterList">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="0,0,0,8">
+                        <TextBlock Text="{Binding Label}"
+                                Margin="0,0,0,2"/>
+                        <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Foreground="Gray"
+                TextWrapping="Wrap"
+                   Text="Dates: yyyy-MM-dd. Yes/No: true or false."/>
+
+        <StackPanel Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Margin="0,12,0,0">
+            <Button Content="OK"
+                    IsDefault="True"
+                    Padding="16,4"
+                    Click="Ok_Click"/>
+            <Button Content="Cancel"
+                    IsCancel="True"
+                    Padding="16,4"
+                    Margin="8,0,0,0"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>
