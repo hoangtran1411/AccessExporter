@@ -2,6 +2,8 @@
 using System.Data;
 using System.Data.OleDb;
 using AccessExporter.Models;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace AccessExporter.Services;
 
@@ -41,6 +43,7 @@ public class AccessReader : IAccessReader
         var result = new List<TableInfo>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var noParameters = Array.Empty<QueryParameter>();
+        var linkPaths = LoadLinkPaths(mdbPath);
 
         // 1) Tables, linked tables, select queries without parameters
         var schema = connection.GetSchema("Tables");
@@ -62,7 +65,8 @@ public class AccessReader : IAccessReader
 
             if (kind is not null && seen.Add(name))
             {
-                result.Add(new TableInfo(name, kind.Value, noParameters));
+                linkPaths.TryGetValue(name, out var linkPath);
+                result.Add(new TableInfo(name, kind.Value, noParameters, linkPath ?? string.Empty));
             }
         }
 
@@ -146,4 +150,70 @@ public class AccessReader : IAccessReader
 
         return result;
     }
+    // Link table name -> where it points to. Uses ADOX through late binding (no COM reference needed).
+    // Any failure just returns what was collected so far: the path is a nice-to-have, never required.
+    private static Dictionary<string, string> LoadLinkPaths(string mdbPath)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        object? catalogObject = null;
+
+        try
+        {
+            var type = Type.GetTypeFromProgID("ADOX.Catalog");
+            if (type is null) return result;
+
+            catalogObject = Activator.CreateInstance(type);
+            dynamic catalog = catalogObject!;
+            catalog.ActiveConnection = BuildConnectionString(mdbPath);
+
+            foreach (dynamic table in catalog.Tables)
+            {
+                string name = table.Name;
+                string tableType = table.Type;
+                if (!string.Equals(tableType, "LINK", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var source = ReadProperty(table, "Jet OLEDB:Link Datasource");
+                if (source.Length == 0)
+                {
+                    // ODBC links have no file path: fall back to the connection string
+                    source = MaskSecrets(ReadProperty(table, "Jet OLEDB:Link Provider String"));
+                }
+
+                var remote = ReadProperty(table, "Jet OLEDB:Remote Table Name");
+                if (remote.Length > 0 && !string.Equals(remote, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    source = $"{source}  ->  [{remote}]";
+                }
+
+                result[name] = source;
+            }
+        }
+        catch
+        {
+            // ADOX missing or not readable: keep going without link paths
+        }
+        finally
+        {
+            if (catalogObject is not null) Marshal.ReleaseComObject(catalogObject);
+        }
+
+        return result;
+    }
+
+    private static string ReadProperty(dynamic table, string propertyName)
+    {
+        try
+        {
+            object? value = table.Properties[propertyName].Value;
+            return value?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    // Connection strings of ODBC links may contain passwords; never show them
+    private static string MaskSecrets(string text) =>
+        Regex.Replace(text, @"(PWD|Password)\s*=\s*[^;]*", "$1=****", RegexOptions.IgnoreCase);
 }

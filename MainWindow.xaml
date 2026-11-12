@@ -4,62 +4,62 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Access Exporter"
         Height="650"
-        Width="1100"
+        Width="1600"
         Icon="/Assets/grow-plant.ico">
-        
+
 
         <Window.Resources>
                 <!-- Shapes, each drawn in a 10x10 box -->
                 <EllipseGeometry x:Key="CircleGeometry"
-                                Center="5,5"
-                                RadiusX="5"
-                                RadiusY="5"/>
+                                 Center="5,5"
+                                 RadiusX="5"
+                                 RadiusY="5"/>
                 <Geometry x:Key="DiamondGeometry">M 5,0 L 10,5 L 5,10 L 0,5 Z</Geometry>
                 <Geometry x:Key="SquareGeometry">M 0.5,0.5 L 9.5,0.5 L 9.5,9.5 L 0.5,9.5 Z</Geometry>
                 <Geometry x:Key="TriangleGeometry">M 5,0.5 L 10,9.5 L 0,9.5 Z</Geometry>
 
                 <!-- Common look of every icon (also used by the legend) -->
                 <Style x:Key="IconBase"
-                                TargetType="Path">
+                       TargetType="Path">
                         <Setter Property="Width"
-                                        Value="10"/>
+                                Value="10"/>
                         <Setter Property="Height"
-                                        Value="10"/>
+                                Value="10"/>
                         <Setter Property="Stretch"
-                                        Value="Uniform"/>
+                                Value="Uniform"/>
                         <Setter Property="VerticalAlignment"
-                                        Value="Center"/>
+                                Value="Center"/>
                 </Style>
 
                 <!-- Icon in the list: shape + color chosen from TableItem.Kind -->
                 <Style x:Key="KindIcon"
-                                TargetType="Path"
-                                BasedOn="{StaticResource IconBase}">
+                       TargetType="Path"
+                       BasedOn="{StaticResource IconBase}">
                         <Setter Property="Data"
-                                        Value="{StaticResource CircleGeometry}"/>
+                                Value="{StaticResource CircleGeometry}"/>
                         <Setter Property="Fill"
-                                        Value="#2E9E5B"/>
+                                Value="#2E9E5B"/>
                         <Style.Triggers>
                                 <DataTrigger Binding="{Binding Kind}"
-                                                Value="LinkTable">
+                                             Value="LinkTable">
                                         <Setter Property="Data"
-                                                        Value="{StaticResource DiamondGeometry}"/>
+                                                Value="{StaticResource DiamondGeometry}"/>
                                         <Setter Property="Fill"
-                                                        Value="#2F7DE1"/>
+                                                Value="#2F7DE1"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Kind}"
-                                                Value="ViewOrOdbc">
+                                             Value="ViewOrOdbc">
                                         <Setter Property="Data"
-                                                        Value="{StaticResource SquareGeometry}"/>
+                                                Value="{StaticResource SquareGeometry}"/>
                                         <Setter Property="Fill"
-                                                        Value="#E08A1E"/>
+                                                Value="#E08A1E"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Kind}"
-                                                Value="Procedure">
+                                             Value="Procedure">
                                         <Setter Property="Data"
-                                                        Value="{StaticResource TriangleGeometry}"/>
+                                                Value="{StaticResource TriangleGeometry}"/>
                                         <Setter Property="Fill"
-                                                        Value="#8E5BD9"/>
+                                                Value="#8E5BD9"/>
                                 </DataTrigger>
                         </Style.Triggers>
                 </Style>
@@ -69,28 +69,28 @@
 
                 <!-- Legend (declared first, so it sits at the very bottom) -->
                 <StackPanel DockPanel.Dock="Bottom"
-                                Orientation="Horizontal"
-                                Margin="0,8,0,0">
+                            Orientation="Horizontal"
+                            Margin="0,8,0,0">
                         <Path Style="{StaticResource IconBase}"
-                                        Data="{StaticResource CircleGeometry}"
-                                        Fill="#2E9E5B"/>
+                              Data="{StaticResource CircleGeometry}"
+                              Fill="#2E9E5B"/>
                         <TextBlock Text="Table"
-                                        Margin="4,0,16,0"/>
+                                   Margin="4,0,16,0"/>
                         <Path Style="{StaticResource IconBase}"
-                                        Data="{StaticResource DiamondGeometry}"
-                                        Fill="#2F7DE1"/>
+                              Data="{StaticResource DiamondGeometry}"
+                              Fill="#2F7DE1"/>
                         <TextBlock Text="Link table"
-                                        Margin="4,0,16,0"/>
+                                   Margin="4,0,16,0"/>
                         <Path Style="{StaticResource IconBase}"
-                                        Data="{StaticResource SquareGeometry}"
-                                        Fill="#E08A1E"/>
+                              Data="{StaticResource SquareGeometry}"
+                              Fill="#E08A1E"/>
                         <TextBlock Text="View / ODBC (pass-through)"
-                                        Margin="4,0,16,0"/>
+                                   Margin="4,0,16,0"/>
                         <Path Style="{StaticResource IconBase}"
-                                        Data="{StaticResource TriangleGeometry}"
-                                        Fill="#8E5BD9"/>
+                              Data="{StaticResource TriangleGeometry}"
+                              Fill="#8E5BD9"/>
                         <TextBlock Text="Saved query (may ask for parameters)"
-                                        Margin="4,0,0,0"/>
+                                   Margin="4,0,0,0"/>
                 </StackPanel>
 
                 <!-- Row 1: .mdb file -->
@@ -105,7 +105,7 @@
 
                 <!-- Row 2: output folder -->
                 <DockPanel DockPanel.Dock="Top"
-                                Margin="0,8,0,0">
+                           Margin="0,8,0,0">
                         <Button DockPanel.Dock="Right"
                                 Content="Output folder..."
                                 Padding="12,4"
@@ -116,8 +116,8 @@
 
                 <!-- Row 3: tools -->
                 <StackPanel DockPanel.Dock="Top"
-                                Orientation="Horizontal"
-                                Margin="0,8,0,8">
+                            Orientation="Horizontal"
+                            Margin="0,8,0,8">
                         <Button Content="Load tables"
                                 Padding="12,4"
                                 Command="{Binding LoadTablesCommand}"/>
@@ -186,9 +186,9 @@
                                         <ListBox.ItemTemplate>
                                                 <DataTemplate>
                                                         <StackPanel Orientation="Horizontal"
-                                                                        ToolTip="{Binding Kind}">
+                                                                    ToolTip="{Binding Kind}">
                                                                 <Path Style="{StaticResource KindIcon}"
-                                                                                Margin="0,0,8,0"/>
+                                                                      Margin="0,0,8,0"/>
                                                                 <CheckBox IsChecked="{Binding IsSelected}">
                                                                         <TextBlock Text="{Binding Name}"/>
                                                                 </CheckBox>
@@ -210,7 +210,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBox Grid.Row="0"
-                                                Grid.Column="0"
+                                         Grid.Column="0"
                                          Height="80"
                                          Margin="0,0,0,6"
                                          AcceptsReturn="True"
@@ -221,8 +221,8 @@
                                          Text="{Binding SqlText, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <StackPanel Grid.Row="0"
-                                                Grid.Column="1"
-                                                Margin="8,0,0,6">
+                                            Grid.Column="1"
+                                            Margin="8,0,0,6">
                                         <Button Content="Run SQL"
                                                 Padding="12,4"
                                                 Command="{Binding RunSqlCommand}"/>
@@ -234,8 +234,8 @@
                                 </StackPanel>
 
                                 <DataGrid Grid.Row="1"
-                                                Grid.Column="0"
-                                                Grid.ColumnSpan="2"
+                                          Grid.Column="0"
+                                          Grid.ColumnSpan="2"
                                           ItemsSource="{Binding PreviewData}"
                                           IsReadOnly="True"
                                           AutoGenerateColumns="True"

@@ -142,7 +142,7 @@ public partial class MainViewModel : ObservableObject
 
             foreach (var item in items)
             {
-                Tables.Add(new TableItem(item.Name, item.Kind, item.Parameters));
+                Tables.Add(new TableItem(item.Name, item.Kind, item.Parameters, item.LinkPath));
             }
 
             StatusMessage = $"Found {Tables.Count} item(s).";
@@ -196,7 +196,16 @@ public partial class MainViewModel : ObservableObject
             if (SelectedTable != table) return;
 
             PreviewData = data.DefaultView;
-            StatusMessage = $"[{table.Name}]: showing {data.Rows.Count} row(s), {data.Columns.Count} column(s).";
+
+            var status = $"[{table.Name}]: showing {data.Rows.Count} row(s), {data.Columns.Count} column(s).";
+
+            // Link tables: also show where the data really comes from
+            if (table.Kind == TableKind.LinkTable && table.LinkPath.Length > 0)
+            {
+                status += $"  |  Source: {table.LinkPath}";
+            }
+
+            StatusMessage = status;
         }
         catch (Exception ex)
         {
