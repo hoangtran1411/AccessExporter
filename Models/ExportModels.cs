@@ -7,7 +7,8 @@ namespace AccessExporter.Models;
 public enum ExportFormat
 {
     Xlsx,
-    Csv
+    Csv,
+    Sql
 }
 
 // A parameter value already converted to its real type
@@ -19,7 +20,8 @@ public record ExportItem(
     string Name,                               // used for the file name / sheet name
     string CommandText,
     CommandType CommandType,
-    IReadOnlyList<ParameterValue> Parameters)
+    IReadOnlyList<ParameterValue> Parameters,
+    bool IsQueryDefinition = false)
 {
     public static ExportItem ForTable(string name) =>
         new(name, $"SELECT * FROM [{name.Replace("]", "]]")}]", CommandType.Text, Array.Empty<ParameterValue>());
@@ -29,6 +31,9 @@ public record ExportItem(
 
     public static ExportItem ForProcedure(string name, IReadOnlyList<ParameterValue> parameters) =>
         new(name, $"[{name}]", CommandType.StoredProcedure, parameters);
+
+    public static ExportItem ForQueryDefinition(string name) =>
+        new(name, string.Empty, CommandType.Text, Array.Empty<ParameterValue>(), IsQueryDefinition: true);
 }
 
 public record ExportOptions(

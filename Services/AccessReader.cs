@@ -11,6 +11,7 @@ public interface IAccessReader
 {
     IReadOnlyList<TableInfo> GetTables(string mdbPath);
     DataTable GetPreview(string mdbPath, ExportItem item, int maxRows);
+    IReadOnlyDictionary<string, string> GetQueryDefinitions(string mdbPath);
 }
 
 public class AccessReader : IAccessReader
@@ -113,39 +114,198 @@ public class AccessReader : IAccessReader
         return table;
     }
 
-    private static bool IsHidden(string name) =>
+    public IReadOnlyDictionary<string, string> GetQueryDefinitions(string mdbPath)
+    {
+        using var connection = new OleDbConnection(BuildConnectionString(mdbPath));
+        connection.Open();
+        return LoadQueryDefinitions(connection, mdbPath);
+    }
+
+    // Collects saved query SQL from OLE DB schema tables first, then falls back to ADOX for
+    // any queries whose definitions were not exposed by GetOleDbSchemaTable.
+    internal static Dictionary<string, string> LoadQueryDefinitions(OleDbConnection connection, string mdbPath)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        ReadSchemaDefinitions(connection, OleDbSchemaGuid.Views, "TABLE_NAME", "VIEW_DEFINITION", result);
+        ReadSchemaDefinitions(connection, OleDbSchemaGuid.Procedures, "PROCEDURE_NAME", "PROCEDURE_DEFINITION", result);
+        MergeAdoxDefinitions(mdbPath, result);
+
+        return result;
+    }
+
+    private static void ReadSchemaDefinitions(
+        OleDbConnection connection,
+        Guid schemaGuid,
+        string nameColumn,
+        string definitionColumn,
+        Dictionary<string, string> target)
+    {
+        try
+        {
+            var schema = connection.GetOleDbSchemaTable(schemaGuid, null);
+            if (schema is null
+                || !schema.Columns.Contains(nameColumn)
+                || !schema.Columns.Contains(definitionColumn))
+            {
+                return;
+            }
+
+            foreach (DataRow row in schema.Rows)
+            {
+                var name = row[nameColumn]?.ToString() ?? string.Empty;
+                if (IsHidden(name)) continue;
+
+                var sql = CleanSql(row[definitionColumn]?.ToString());
+                if (sql.Length > 0 && !target.ContainsKey(name))
+                {
+                    target[name] = sql;
+                }
+            }
+        }
+        catch
+        {
+            // Schema rowset not supported or unreadable: keep what we have and let ADOX try
+        }
+    }
+
+    private static void MergeAdoxDefinitions(string mdbPath, Dictionary<string, string> target)
+    {
+        object? catalogObject = null;
+
+        try
+        {
+            var type = Type.GetTypeFromProgID("ADOX.Catalog");
+            if (type is null) return;
+
+            catalogObject = Activator.CreateInstance(type);
+            dynamic catalog = catalogObject!;
+            catalog.ActiveConnection = BuildConnectionString(mdbPath);
+
+            MergeAdoxCollection(catalog.Views, target);
+            MergeAdoxCollection(catalog.Procedures, target);
+        }
+        catch
+        {
+            // ADOX missing or unreadable: keep definitions collected from OLE DB schema
+        }
+        finally
+        {
+            if (catalogObject is not null) Marshal.ReleaseComObject(catalogObject);
+        }
+    }
+
+    private static void MergeAdoxCollection(dynamic items, Dictionary<string, string> target)
+    {
+        foreach (var entryObject in items)
+        {
+            object? commandObject = null;
+            try
+            {
+                dynamic entry = entryObject;
+                string name = entry.Name;
+                if (IsHidden(name) || target.ContainsKey(name)) continue;
+
+                commandObject = entry.Command;
+                if (commandObject is null) continue;
+
+                dynamic command = commandObject;
+                var sql = CleanSql((string?)command.CommandText);
+                if (sql.Length > 0)
+                {
+                    target[name] = sql;
+                }
+            }
+            catch
+            {
+                // Skip individual query definitions ADOX cannot read (e.g., some pass-through queries)
+            }
+            finally
+            {
+                if (commandObject is not null) Marshal.ReleaseComObject(commandObject);
+                if (entryObject is not null && Marshal.IsComObject(entryObject)) Marshal.ReleaseComObject(entryObject);
+            }
+        }
+    }
+
+    private static string CleanSql(string? sql)
+    {
+        var trimmed = sql?.Trim('\0', ' ', '\t', '\r', '\n') ?? string.Empty;
+        if (trimmed.Length == 0) return string.Empty;
+        return trimmed.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", Environment.NewLine);
+    }
+
+    private static readonly HashSet<string> BuiltInSystemTables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "MSysObjects",
+        "MSysACEs",
+        "MSysQueries",
+        "MSysRelationships",
+        "MSysDb",
+        "MSysAccounts",
+        "MSysGroups",
+        "MSysUserList",
+        "MSysCmdbars",
+        "MSysCompactError",
+        "MSysIMEXColumns",
+        "MSysIMEXSpecs",
+        "MSysModules",
+        "MSysModules2",
+        "MSysNameMap",
+        "MSysResources",
+        "MSysComplexColumns",
+        "MSysAccessObjects",
+        "MSysAccessStorage",
+        "MSysAccessXML",
+        "MSysNavPaneGroups",
+        "MSysNavPaneGroupCategories",
+        "MSysNavPaneGroupToObjects",
+        "MSysNavPaneObjectIDs"
+    };
+
+    // Exclude empty names, temporary ~* objects, and built-in Access/Jet metadata tables,
+    // while allowing user-created tables whose names start with "MSys" (e.g., MsysThuMuc).
+    internal static bool IsHidden(string name) =>
         name.Length == 0
-        || name.StartsWith("MSys", StringComparison.OrdinalIgnoreCase)
-        || name.StartsWith("~");
+        || name.StartsWith("~")
+        || BuiltInSystemTables.Contains(name)
+        || name.StartsWith("MSysComplexType_", StringComparison.OrdinalIgnoreCase);
 
     private static Dictionary<string, List<QueryParameter>> LoadProcedureParameters(OleDbConnection connection)
     {
         var result = new Dictionary<string, List<QueryParameter>>(StringComparer.OrdinalIgnoreCase);
 
-        var schema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Procedure_Parameters, null);
-        if (schema is null) return result;
-
-        foreach (DataRow row in schema.Rows)
+        try
         {
-            var procedure = row["PROCEDURE_NAME"]?.ToString() ?? string.Empty;
-            var name = row["PARAMETER_NAME"]?.ToString() ?? string.Empty;
-            var position = Convert.ToInt32(row["ORDINAL_POSITION"]);
+            var schema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Procedure_Parameters, null);
+            if (schema is null) return result;
 
-            // OleDbType values mirror the OLE DB DBTYPE numbers, so a plain cast works
-            var type = (OleDbType)Convert.ToInt32(row["DATA_TYPE"]);
-
-            if (!result.TryGetValue(procedure, out var list))
+            foreach (DataRow row in schema.Rows)
             {
-                list = new List<QueryParameter>();
-                result[procedure] = list;
+                var procedure = row["PROCEDURE_NAME"]?.ToString() ?? string.Empty;
+                var name = row["PARAMETER_NAME"]?.ToString() ?? string.Empty;
+                var position = Convert.ToInt32(row["ORDINAL_POSITION"]);
+
+                // OleDbType values mirror the OLE DB DBTYPE numbers, so a plain cast works
+                var type = (OleDbType)Convert.ToInt32(row["DATA_TYPE"]);
+
+                if (!result.TryGetValue(procedure, out var list))
+                {
+                    list = new List<QueryParameter>();
+                    result[procedure] = list;
+                }
+
+                list.Add(new QueryParameter(name, position, type));
             }
 
-            list.Add(new QueryParameter(name, position, type));
+            foreach (var list in result.Values)
+            {
+                list.Sort((a, b) => a.Position.CompareTo(b.Position));
+            }
         }
-
-        foreach (var list in result.Values)
+        catch
         {
-            list.Sort((a, b) => a.Position.CompareTo(b.Position));
+            // Jet 4.0 does not support Procedure_Parameters; still allow listing Procedures without parameter metadata
         }
 
         return result;

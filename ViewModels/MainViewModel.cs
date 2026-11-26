@@ -43,7 +43,7 @@ public partial class MainViewModel : ObservableObject
     private DataView? _previewData;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanChooseSingleFile))]
+    [NotifyPropertyChangedFor(nameof(CanChooseSingleFile), nameof(SingleFileLabel))]
     private ExportFormat _selectedFormat = ExportFormat.Xlsx;
 
     [ObservableProperty]
@@ -73,8 +73,12 @@ public partial class MainViewModel : ObservableObject
 
     public ExportFormat[] Formats { get; } = Enum.GetValues<ExportFormat>();
 
-    // "Single file" only makes sense for xlsx (CSV has no sheets)
-    public bool CanChooseSingleFile => SelectedFormat == ExportFormat.Xlsx;
+    // "Single file" applies to xlsx (multiple sheets) and sql (combined script)
+    public bool CanChooseSingleFile => SelectedFormat is ExportFormat.Xlsx or ExportFormat.Sql;
+
+    public string SingleFileLabel => SelectedFormat == ExportFormat.Sql
+        ? "Single file (combine all queries)"
+        : "Single file (one sheet per table)";
 
     public MainViewModel()
     {
@@ -343,9 +347,10 @@ public partial class MainViewModel : ObservableObject
         // Collecting items may show the parameter dialog, so it must run on the UI thread.
         // This is still before the first await, so it does.
         List<ExportItem>? items;
+        int skippedTables;
         try
         {
-            items = CollectExportItems(fromSql);
+            items = CollectExportItems(fromSql, out skippedTables);
         }
         catch (FormatException ex)
         {
@@ -381,7 +386,9 @@ public partial class MainViewModel : ObservableObject
             var files = await _exporter.ExportAsync(options, progress, token);
             LastExportedFiles = files;
             ProgressValue = ProgressMax;
-            StatusMessage = $"Done: {files.Count} file(s) written to {OutputFolder}";
+            StatusMessage = skippedTables > 0
+                ? $"Done: {files.Count} file(s) written to {OutputFolder} ({skippedTables} table(s) skipped)."
+                : $"Done: {files.Count} file(s) written to {OutputFolder}";
         }
         catch (OperationCanceledException)
         {
@@ -394,8 +401,10 @@ public partial class MainViewModel : ObservableObject
     }
 
     // Returns null (and sets StatusMessage) when there is nothing to export or the user canceled
-    private List<ExportItem>? CollectExportItems(bool fromSql)
+    private List<ExportItem>? CollectExportItems(bool fromSql, out int skippedTables)
     {
+        skippedTables = 0;
+
         if (fromSql)
         {
             if (string.IsNullOrWhiteSpace(SqlText))
@@ -416,6 +425,23 @@ public partial class MainViewModel : ObservableObject
         {
             StatusMessage = "Tick at least one item to export.";
             return null;
+        }
+
+        if (SelectedFormat == ExportFormat.Sql)
+        {
+            var queries = ticked
+                .Where(t => t.Kind is TableKind.ViewOrOdbc or TableKind.Procedure)
+                .ToList();
+            skippedTables = ticked.Count - queries.Count;
+
+            if (queries.Count == 0)
+            {
+                StatusMessage = $"No queries selected to export as SQL ({skippedTables} table(s) skipped).";
+                return null;
+            }
+
+            // SQL export writes saved query definitions without executing them or asking for parameters
+            return queries.Select(q => ExportItem.ForQueryDefinition(q.Name)).ToList();
         }
 
         var items = new List<ExportItem>();

@@ -136,7 +136,7 @@
                                   VerticalAlignment="Center"
                                   ItemsSource="{Binding Formats}"
                                   SelectedItem="{Binding SelectedFormat}"/>
-                        <CheckBox Content="Single file (one sheet per table)"
+                        <CheckBox Content="{Binding SingleFileLabel}"
                                   Margin="8,0,0,0"
                                   VerticalAlignment="Center"
                                   IsChecked="{Binding SingleFile}"

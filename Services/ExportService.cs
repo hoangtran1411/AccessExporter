@@ -38,6 +38,11 @@ public class ExportService : IExportService
         using var connection = new OleDbConnection(AccessReader.BuildConnectionString(options.MdbPath));
         connection.Open();
 
+        if (options.Format == ExportFormat.Sql)
+        {
+            return ExportSql(connection, options, progress, ct);
+        }
+
         if (options.Format == ExportFormat.Xlsx && options.SingleFile)
         {
             // One workbook, one sheet per item
@@ -197,6 +202,112 @@ public class ExportService : IExportService
     {
         if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0) return value;
         return "\"" + value.Replace("\"", "\"\"") + "\"";
+    }
+
+    // ---------- SQL helpers ----------
+
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
+    private static IReadOnlyList<string> ExportSql(
+        OleDbConnection connection,
+        ExportOptions options,
+        IProgress<ExportProgress>? progress,
+        CancellationToken ct)
+    {
+        var files = new List<string>();
+        var total = options.Items.Count;
+        var definitions = options.Items.Any(i => i.IsQueryDefinition)
+            ? AccessReader.LoadQueryDefinitions(connection, options.MdbPath)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (options.SingleFile)
+        {
+            var path = Path.Combine(
+                options.OutputFolder,
+                SanitizeFileName(Path.GetFileNameWithoutExtension(options.MdbPath)) + ".sql");
+            WriteCombinedSql(options, definitions, path, progress, ct);
+            files.Add(path);
+        }
+        else
+        {
+            for (var i = 0; i < total; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var item = options.Items[i];
+                progress?.Report(new ExportProgress(item.Name, i, total));
+
+                var path = Path.Combine(options.OutputFolder, SanitizeFileName(item.Name) + ".sql");
+                WriteSingleSql(item, ResolveSqlText(item, definitions), path);
+                files.Add(path);
+            }
+        }
+
+        progress?.Report(new ExportProgress(string.Empty, total, total));
+        return files;
+    }
+
+    private static string ResolveSqlText(ExportItem item, IReadOnlyDictionary<string, string> definitions)
+    {
+        if (!item.IsQueryDefinition)
+        {
+            return item.CommandText.Trim();
+        }
+
+        if (definitions.TryGetValue(item.Name, out var sql) && sql.Length > 0)
+        {
+            return sql;
+        }
+
+        return $"-- Unable to extract SQL definition for [{item.Name}] from Jet OLEDB (e.g., ODBC pass-through or restricted query).";
+    }
+
+    private static void WriteSingleSql(ExportItem item, string sqlText, string path)
+    {
+        try
+        {
+            using var writer = new StreamWriter(path, false, Utf8NoBom);
+            writer.WriteLine($"-- Query: [{item.Name}]");
+            writer.WriteLine(sqlText);
+        }
+        catch
+        {
+            TryDelete(path);
+            throw;
+        }
+    }
+
+    private static void WriteCombinedSql(
+        ExportOptions options,
+        IReadOnlyDictionary<string, string> definitions,
+        string path,
+        IProgress<ExportProgress>? progress,
+        CancellationToken ct)
+    {
+        var total = options.Items.Count;
+        try
+        {
+            using var writer = new StreamWriter(path, false, Utf8NoBom);
+            writer.WriteLine($"-- Source: {Path.GetFileName(options.MdbPath)}");
+            writer.WriteLine($"-- Exported at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+            for (var i = 0; i < total; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var item = options.Items[i];
+                progress?.Report(new ExportProgress(item.Name, i, total));
+
+                writer.WriteLine();
+                writer.WriteLine("-- ============================================================");
+                writer.WriteLine($"-- [{i + 1}/{total}] [{item.Name}]");
+                writer.WriteLine("-- ============================================================");
+                writer.WriteLine(ResolveSqlText(item, definitions));
+            }
+        }
+        catch
+        {
+            TryDelete(path);
+            throw;
+        }
     }
 
     // ---------- Shared helpers ----------
